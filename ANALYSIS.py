@@ -17,6 +17,7 @@ import glob
 
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+specific_time = datetime.timedelta(0)
 
 def authenticate_google():
     """Shows basic usage of the Google Calendar API.
@@ -69,6 +70,15 @@ def get_events(id_choosen, start_day, end_day, service):
         end = end + [string_to_int(event['end'].get('dateTime', event['end'].get('date')))]
         summary = summary + [event['summary']]
 
+    """
+    keyword = 'Zeit mit Nina'
+    global specific_time
+    for i in range(len(summary)):
+        if summary[i] == keyword:
+            specific_time += np.subtract(end,start)[i]
+
+    print('Time spent on ""' + keyword + '"": ' + str(specific_time))
+    """
     return [start, end, summary]
 
 
@@ -156,12 +166,14 @@ def plot(dates, durations):
 
 
 def choose_calendar(name_choosen, start_date, end_date):
-    name = ['Aris', 'Car', 'DroGone', 'SeaGlider', 'Stundenplan', 'Arbeit', 'Dipper', 'Amiv', 'Koordination Fokusprojekte', 'Crypto']
-    id = ['8kr78seiflopv5brbl6h3d99bo@group.calendar.google.com', 'lv1bdbitcmflf49hek1q999seo@group.calendar.google.com', 'sdjr4mcua71dhke935srmuuies@group.calendar.google.com', 'askh7fn9npk6mma9e7oo6dn96o@group.calendar.google.com', 'gljlq3fa3rp0is3kkrcg9gsmd0@group.calendar.google.com', 'eqa215j7sqpru28o7e9qgph4g4@group.calendar.google.com', 'v8oi46ort679nopg3pahkvlsh4@group.calendar.google.com', '57hlk6nr14pf2im1nn5epkb7n0@group.calendar.google.com', 'lcb8rr1h49pvnmrgo22se2t57k@group.calendar.google.com', 'ctgifgcmla84iuo6eo7bb3ql84@group.calendar.google.com']
+    name = ['Privat','Aris', 'Car', 'DroGone', 'SeaGlider', 'Stundenplan', 'Arbeit', 'Dipper', 'Amiv', 'Koordination Fokusprojekte', 'Crypto']
+    id = ['simonjeger@gmail.com','8kr78seiflopv5brbl6h3d99bo@group.calendar.google.com', 'lv1bdbitcmflf49hek1q999seo@group.calendar.google.com', 'sdjr4mcua71dhke935srmuuies@group.calendar.google.com', 'askh7fn9npk6mma9e7oo6dn96o@group.calendar.google.com', 'gljlq3fa3rp0is3kkrcg9gsmd0@group.calendar.google.com', 'eqa215j7sqpru28o7e9qgph4g4@group.calendar.google.com', 'v8oi46ort679nopg3pahkvlsh4@group.calendar.google.com', '57hlk6nr14pf2im1nn5epkb7n0@group.calendar.google.com', 'lcb8rr1h49pvnmrgo22se2t57k@group.calendar.google.com', 'ctgifgcmla84iuo6eo7bb3ql84@group.calendar.google.com']
     id_choosen = []
 
     timeframe = end_date - start_date
     stride = int(timeframe.days/20)
+    if stride < 1:
+        stride = 1
 
     for r in name_choosen:
         if r in name:
@@ -210,4 +222,5 @@ def delete(days):
 #delete(1)
 
 # Calculate this semester
-choose_calendar(['Aris', 'Car', 'DroGone', 'SeaGlider', 'Stundenplan', 'Arbeit', 'Dipper', 'Amiv', 'Koordination Fokusprojekte', 'Crypto'], datetime.datetime(2020, 9, 14, 0,0,0), datetime.datetime.today())
+choose_calendar(['Aris', 'Car', 'DroGone', 'SeaGlider', 'Stundenplan', 'Arbeit', 'Dipper', 'Amiv', 'Koordination Fokusprojekte', 'Crypto'], datetime.datetime(2021, 8, 1, 0,0,0), datetime.datetime.today())
+#choose_calendar(['Privat'], datetime.datetime(2020, 9, 14, 0,0,0), datetime.datetime.today())

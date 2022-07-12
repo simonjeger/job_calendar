@@ -1,21 +1,29 @@
-from __future__ import print_function
+import re
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 import datetime
 import pickle
-import os.path
+import os
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import pytz
 import time
-import csv
-import os.path
 import pandas as pd
-import glob
 
-# If modifying these scopes, delete the file token.pickle.
+import yaml
+import argparse
+
+# Get yaml parameter
+parser = argparse.ArgumentParser()
+parser.add_argument('yaml_file')
+args = parser.parse_args()
+with open(args.yaml_file, 'rt') as fh:
+    yaml_p = yaml.safe_load(fh)
+
+PATH = 'backlog/'
+
+# If modifying these scopes,delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 specific_time = datetime.timedelta(0)
 
@@ -24,203 +32,188 @@ def authenticate_google():
     Prints the start and name of the next 10 events on the user's calendar.
     """
     creds = None
-    # The file token.pickle stores the user's access and refresh tokens, and is
+    # The file token.pickle stores the user's access and refresh tokens,and is
     # created automatically when the authorization flow completes for the first
     # time.
     if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
+        with open('token.pickle','rb') as token:
             creds = pickle.load(token)
-    # If there are no (valid) credentials available, let the user log in.
+    # If there are no (valid) credentials available,let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
+                'credentials.json',SCOPES)
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
+        with open('token.pickle','wb') as token:
+            pickle.dump(creds,token)
 
-    service = build('calendar', 'v3', credentials=creds)
+    service = build('calendar','v3',credentials=creds)
 
     return service
 
-
-def get_events(id_choosen, start_day, end_day, service):
+def get_events(id_choosen,day_start,day_end,service):
     # Call the Calendar API
-    start_date = datetime.datetime.combine(start_day, datetime.datetime.min.time())
-    end_date = datetime.datetime.combine(end_day, datetime.datetime.max.time())
+    start_date = datetime.datetime.combine(day_start,datetime.datetime.min.time())
+    end_date = datetime.datetime.combine(day_end,datetime.datetime.max.time())
     utc = pytz.UTC
     start_date = start_date.astimezone(utc)
     end_date = end_date.astimezone(utc)
 
-    events_result = service.events().list(calendarId=id_choosen, timeMin=start_date.isoformat(), timeMax=end_date.isoformat(), singleEvents=True, orderBy='startTime').execute()
-    events = events_result.get('items', [])
+    events_result = service.events().list(calendarId=id_choosen,timeMin=start_date.isoformat(),timeMax=end_date.isoformat(),singleEvents=True,orderBy='startTime').execute()
+    events = events_result.get('items',[])
 
     start = []
     end = []
     summary = []
-
-    #if not events:
-    #    print('No upcoming events found.')
+    location = []
 
     for event in events:
-        start = start + [string_to_int(event['start'].get('dateTime', event['start'].get('date')))]
-        end = end + [string_to_int(event['end'].get('dateTime', event['end'].get('date')))]
-        summary = summary + [event['summary']]
+        if len(event['start'].get('dateTime',event['start'].get('date'))) > 10: #to filter out whole day events
+            start += [string_to_datetime(event['start'].get('dateTime',event['start'].get('date')))]
+            end += [string_to_datetime(event['end'].get('dateTime',event['end'].get('date')))]
+            summary += [event['summary']]
+            try: #not every entry might have a location
+                location += [event['location']]
+            except:
+                location += [None]
+    return start,end,summary,location
 
-    """
-    keyword = 'Zeit mit Nina'
-    global specific_time
-    for i in range(len(summary)):
-        if summary[i] == keyword:
-            specific_time += np.subtract(end,start)[i]
+def string_to_datetime(string):
+    year = int(string[0:4])
+    month = int(string[5:7])
+    day = int(string[8:10])
+    hour = int(string[11:13])
+    minute = int(string[14:16])
+    second = int(string[17:19])
+    return datetime.datetime(year,month,day,hour,minute,second)
 
-    print('Time spent on ""' + keyword + '"": ' + str(specific_time))
-    """
-    return [start, end, summary]
-
-
-def string_to_int(string):
-    if len(string) > 10:
-        year = int(string[0:4])
-        month = int(string[5:7])
-        day = int(string[8:10])
-        hour = int(string[11:13])
-        minute = int(string[14:16])
-        second = int(string[17:19])
-        return datetime.datetime(year, month, day, hour, minute, second)
-    else:
-        return datetime.datetime(1, 1, 1, 1, 1, 1) # whole day event, as long it starts and ends on the same day everything is fine
-
-
-def duration(events):
-    return np.sum(np.subtract(events[1], events[0]))
-
-
-def evaluate(id_choosen, start_date, end_date, j, t):
+def scrape(cat,cal,id,start_date,end_date):
     service = authenticate_google()
-
-    path_backlog = 'backlog/' + str(id_choosen) + ".csv"
-    if os.path.isfile(path_backlog): # generate data starting at last known date
-        # read in previous data
-        df = pd.read_csv(path_backlog)
-        dates_prev = np.asarray(df['dates'])
-        for i in range(len(dates_prev)):
-            dates_prev[i] = datetime.datetime.strptime(dates_prev[i][0:19], '%Y-%m-%d')
-        durations_prev = np.asarray(df['durations'])
-
-        if start_date >= dates_prev[0]: # check if we even have data that dates this far back
-            n = max(((end_date - dates_prev[-1]).days), 0)
-            dates = [dates_prev[-1]] * n
+    
+    start = []
+    end = []
+    summary = []
+    location = []
+    end_i_old = [start_date - datetime.timedelta(days=1)]
+    end_i = [start_date]
+    while True: #you can only scrape 250 entries per seconds
+        end_i_old = end_i[-1]
+        start_i,end_i,summary_i,location_i = get_events(id,end_i[-1],end_date,service)
+        if len(end_i) == 0:
+            break
+        if end_i[-1] == end_i_old:
+            break
+        start += start_i
+        end += end_i
+        summary += summary_i
+        location += location_i
+        if len(end_i) != 0:
+            print(cal + ": " + str(end_i[-1]),end='\r')
         else:
-            n = ((end_date - start_date).days + 1)
-            dates = [start_date] * n
-
-    else: # generate data from start
-        dates_prev = []
-        durations_prev = []
-
-        n = ((end_date - start_date).days + 1)
-        dates = [start_date - datetime.timedelta(1)] * n #quickfix on 19.04.21
-
-    events = [0] * n
-    durations = [0] * n
-    i = 0
-
-    while i < n:
-
-        # Because otherwise API crashes
+            break
         time.sleep(1)
-
-        dates[i] = dates[i] + datetime.timedelta(1) * (i+1)
-        print(str(int(j)) + '/' + str(t) + ' - ' + str(int(100*i/n)) + ' %')
-        events[i] = get_events(id_choosen, dates[i], dates[i], service)
-        if duration(events[i]) != 0:
-            durations[i] = duration(events[i]).seconds / 3600
-        else:
-            durations[i] = 0
-        i = i + 1
-
-    dates = np.concatenate((dates_prev, dates), axis = 0)
-    durations = np.concatenate((durations_prev, durations), axis = 0)
+    
+    duration = list(np.subtract(end,start))
+    for d in range(len(duration)):
+        duration[d] = duration[d].total_seconds()/3600 #save in hours
 
     # Write to file
-    df = pd.DataFrame({'dates': dates, 'durations': durations})
-    df.to_csv(path_or_buf = path_backlog, index=False)
+    df = pd.DataFrame({'cat':[cat]*len(summary),'cal':cal,'summary':summary,'start':start,'end':end,'duration':duration,'location':location})
+    df.to_csv(path_or_buf=PATH + str(id) + ".csv",index=False)
 
-    # Remove everything that's not observed
-    idx_obs = df[ df['dates'] < start_date].index
-    df.drop(idx_obs , inplace=True)
-    idx_obs = df[ df['dates'] > end_date].index
-    df.drop(idx_obs , inplace=True)
-    dates = np.asarray(df['dates'])
-    durations = np.asarray(df['durations'])
+def combine(start_date,end_date):
+    names = os.listdir(PATH)
+    df = pd.DataFrame()
+    for name in names:
+        df = df.append(pd.read_csv(PATH + name))
 
-    return [dates, durations]
+    df['start'] = pd.to_datetime(df['start'])
+    df['end'] = pd.to_datetime(df['end'])
+    df = df[(df['start']>=start_date)&(df['end']<=end_date)]
+    df = df.sort_values(by=['start'])
+    return df
 
+def sum_per_day(df):
+    df['start'] = df['start'].dt.floor(freq='D')
+    df = df.groupby(['cat','cal','start'],as_index=False).sum()
+    df = df.sort_values(by=['start'])
+    return df
 
-def plot(dates, durations):
-    plt.plot(dates, durations)
+def avg_per_day(df):
+    df['start'] = df['start'].dt.floor(freq='D')
+    df = df.groupby(['cat','start'],as_index=False).mean()
+    df = df.sort_values(by=['start'])
+    return df
 
+def fill(df,start,end):
+    idx = pd.date_range(start, end)
+    if len(df) > 0:
+        df = df.set_index('start')
+        df = df.reindex(idx, fill_value=0)
+    return df,idx
 
-def choose_calendar(name_choosen, start_date, end_date):
-    name = ['Privat','Aris', 'Car', 'DroGone', 'SeaGlider', 'Stundenplan', 'Arbeit', 'Dipper', 'Amiv', 'Koordination Fokusprojekte', 'Crypto']
-    id = ['simonjeger@gmail.com','8kr78seiflopv5brbl6h3d99bo@group.calendar.google.com', 'lv1bdbitcmflf49hek1q999seo@group.calendar.google.com', 'sdjr4mcua71dhke935srmuuies@group.calendar.google.com', 'askh7fn9npk6mma9e7oo6dn96o@group.calendar.google.com', 'gljlq3fa3rp0is3kkrcg9gsmd0@group.calendar.google.com', 'eqa215j7sqpru28o7e9qgph4g4@group.calendar.google.com', 'v8oi46ort679nopg3pahkvlsh4@group.calendar.google.com', '57hlk6nr14pf2im1nn5epkb7n0@group.calendar.google.com', 'lcb8rr1h49pvnmrgo22se2t57k@group.calendar.google.com', 'ctgifgcmla84iuo6eo7bb3ql84@group.calendar.google.com']
-    id_choosen = []
+def analysis(df):
+    fig, axs = plt.subplots(3)
 
-    timeframe = end_date - start_date
-    stride = int(timeframe.days/20)
-    if stride < 1:
-        stride = 1
+    # top plot
+    df_days = sum_per_day(df)
+    start = df_days['start'].iloc[0]
+    end = df_days['start'].iloc[-1]
+    y = np.zeros((int((end - start).total_seconds()/3600/24+1)))
+    cat_sum = [0,0,0]
+    colors = ['red','green','blue']
+    c = 0
+    for cat in list(yaml_p):
+        for cal in list(yaml_p[cat]):
+            df_sub,idx = fill(df_days[(df_days['cat']==cat)&(df_days['cal']==cal)],start,end)
+            if len(df_sub) > 0:
+                y += df_sub['duration'].to_numpy()
+                axs[0].fill_between(idx,y,color=colors[c],zorder=len(list(yaml_p[cat]))-c-10) #so the label is on top
+        cat_sum[c] = y[-1]
+        c += 1
+    
+    #Label
+    for cs in range(len(cat_sum)-1):
+        cat_sum[-cs-1] -= cat_sum[-cs-2]
+    legend=[]
+    for cs in range(len(cat_sum)):
+        legend.append(list(yaml_p)[cs] + ", today: " + str(np.round(cat_sum[cs],2)) + " [h]")
+    
+    axs[0].legend(legend)
+    axs[0].set_ylabel("[h]")
 
-    for r in name_choosen:
-        if r in name:
-            id_choosen = id_choosen + [id[name.index(r)]]
+    # middle plot
+    df_avg = avg_per_day(df[df['cat']=='Work'])
+    for cat in ["Work"]:
+        for cal in list(yaml_p[cat]):
+            df_sub,idx = fill(df_avg,start,end)
+            axs[1].plot(idx,df_sub['duration'],color=colors[0])
+    axs[1].legend(["Work" + ", today: " + str(np.round(df_sub['duration'][-1],2)) + " [h]"])
+    axs[1].set_ylabel("avg. conc. span [h]")
 
-    result = []
-    j = 0
-    for r in id_choosen:
-        j = j + 1
-        result = result + [evaluate(r, start_date, end_date, j, len(name_choosen))]
+    # bottom plot
+    for cat in ["Privat"]:
+        for cal in ["Sport"]:
+            df_sub,idx = fill(df_days[(df_days['cat']==cat)&(df_days['cal']==cal)],start,end)
+            axs[2].plot(idx,df_sub['duration'],color=colors[2])
+    axs[2].legend(["Sport" + ", today: " + str(np.round(df_sub['duration'][-1],2)) + " [h]"])
+    axs[2].set_ylabel("[h]")
 
-    # plot curves
-    total = [0] * len(result[0][1])
-    for r in result:
-        r[1] = np.add(r[1], total)
-        total = r[1]
-    for r in result[::-1]:
-        plt.fill_between(r[0], r[1])
-
-    # calculate moving average
-    total = result[-1][1]
-    m_length = len(total)-2*stride
-    m_average = [0]*m_length
-    for i in range(m_length):
-        m_average[i] = np.average(total[i:i+2*stride])
-    plt.plot(result[-1][0][stride:-stride], m_average, 'k')
-
-    plt.legend(['moving average (stride = '+ u"\u00B1" + str(stride) + ')'] + name_choosen[::-1], loc='best')
-    print('\n')
-    print('total since ' + str(start_date.date()) + ': ' + str(np.round(np.sum(total),2)))
-    print('average since ' + str(start_date.date()) + ': ' + str(np.round(np.sum(total)/len(total),2)))
-    print('total today: ' + str(np.round(total[-1],2)))
+    plt.gcf().autofmt_xdate()
     plt.show()
     plt.close()
 
-def delete(days):
-    for filename in glob.glob(os.path.join('backlog/', '*.csv')):
-        df = pd.read_csv(filename)
-        df.drop(df.tail(days).index,inplace=True)
-        df.to_csv(path_or_buf = filename, index=False)
+def main():
+    end_date = datetime.datetime.today()
+    #start_date = datetime.datetime(2019, 8, 26, 0,0,0)
+    start_date = end_date - datetime.timedelta(weeks=4)
+    for cat in list(yaml_p):
+            for cal in list(yaml_p[cat]):
+                scrape(cat,cal,yaml_p[cat][cal],start_date,end_date)
+    df = combine(start_date,end_date)
+    analysis(df)
 
-# Total
-#choose_calendar(['Aris', 'Car', 'DroGone', 'SeaGlider', 'Stundenplan', 'Arbeit', 'Dipper', 'Amiv', 'Koordination Fokusprojekte', 'Crypto'], datetime.datetime(2019, 8, 26, 0,0,0), datetime.datetime.today())
-
-# Refresh last n days (to refresh)
-#delete(1)
-
-# Calculate this semester
-choose_calendar(['Aris', 'Car', 'DroGone', 'SeaGlider', 'Stundenplan', 'Arbeit', 'Dipper', 'Amiv', 'Koordination Fokusprojekte', 'Crypto'], datetime.datetime(2021, 8, 1, 0,0,0), datetime.datetime.today())
-#choose_calendar(['Privat'], datetime.datetime(2020, 9, 14, 0,0,0), datetime.datetime.today())
+main()

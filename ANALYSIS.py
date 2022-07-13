@@ -132,7 +132,7 @@ def combine(start_date,end_date):
 
     df['start'] = pd.to_datetime(df['start'])
     df['end'] = pd.to_datetime(df['end'])
-    df = df[(df['start']>=start_date)&(df['end']<=end_date)]
+    df = df[(df['start']>=start_date)&(df['start']<=end_date)]
     df = df.sort_values(by=['start'])
     return df
 
@@ -171,7 +171,7 @@ def analysis(df):
             df_sub,idx = fill(df_days[(df_days['cat']==cat)&(df_days['cal']==cal)],start,end)
             if len(df_sub) > 0:
                 y += df_sub['duration'].to_numpy()
-                axs[0].fill_between(idx,y,color=colors[c],zorder=len(list(yaml_p[cat]))-c-10) #so the label is on top
+        axs[0].fill_between(idx,y,color=colors[c],zorder=len(list(yaml_p[cat]))-c-10) #so the label is on top
         cat_sum[c] = y[-1]
         c += 1
     

@@ -182,7 +182,7 @@ def analysis(df):
     for cs in range(len(cat_sum)):
         legend.append(list(yaml_p)[cs] + ", today: " + str(np.round(cat_sum[cs],2)) + " [h]")
     
-    axs[0].legend(legend)
+    axs[0].legend(legend, loc='upper left')
     axs[0].set_ylabel("[h]")
 
     # middle plot
@@ -191,7 +191,7 @@ def analysis(df):
         for cal in list(yaml_p[cat]):
             df_sub,idx = fill(df_avg,start,end)
             axs[1].plot(idx,df_sub['duration'],color=colors[0])
-    axs[1].legend(["Work" + ", today: " + str(np.round(df_sub['duration'][-1],2)) + " [h]"])
+    axs[1].legend(["Work" + ", today: " + str(np.round(df_sub['duration'][-1],2)) + " [h]"], loc='upper left')
     axs[1].set_ylabel("avg. conc. span [h]")
 
     # bottom plot
@@ -199,7 +199,7 @@ def analysis(df):
         for cal in ["Sport"]:
             df_sub,idx = fill(df_days[(df_days['cat']==cat)&(df_days['cal']==cal)],start,end)
             axs[2].plot(idx,df_sub['duration'],color=colors[2])
-    axs[2].legend(["Sport" + ", today: " + str(np.round(df_sub['duration'][-1],2)) + " [h]"])
+    axs[2].legend(["Sport" + ", today: " + str(np.round(df_sub['duration'][-1],2)) + " [h]"], loc='upper left')
     axs[2].set_ylabel("[h]")
 
     plt.gcf().autofmt_xdate()
